@@ -1,7 +1,10 @@
 # Run from any working directory; verification outputs stay in assistant scratch.
 local({
-  project <- "G:/Home/Projects/LichenBiomassFullAI"
-  module <- file.path(project, "modules", "WB_HartJohnstoneForestClassesAI_Sol6_1")
+  sourceFiles <- lapply(sys.frames(), function(frame) frame$ofile)
+  sourceFiles <- Filter(function(path) is.character(path) && length(path) == 1L, sourceFiles)
+  if (!length(sourceFiles)) stop("Run this file with source().")
+  module <- normalizePath(file.path(dirname(tail(sourceFiles, 1L)[[1L]]), ".."), winslash = "/")
+  project <- dirname(dirname(module))
   old <- .libPaths()
   on.exit(.libPaths(old))
   .libPaths(c(file.path(project, "packages", "4.5"), old))
@@ -22,5 +25,6 @@ local({
   scratch <- Sys.getenv("HART_TEST_OUTPUT_DIR")
   if (!nzchar(scratch)) stop("Set HART_TEST_OUTPUT_DIR to a disposable test directory.")
   dir.create(scratch, recursive = TRUE, showWarnings = FALSE)
+  terra::terraOptions(tempdir = scratch)
   testthat::test_dir(file.path(module, "tests", "testthat"), env = environment(), stop_on_failure = TRUE)
 })

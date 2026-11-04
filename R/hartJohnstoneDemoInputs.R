@@ -1,4 +1,4 @@
-#' Construct deterministic demonstration inputs without changing supplied objects
+#' Explicitly construct demonstration inputs; never called automatically by the module
 #' @param cohortData Optional supplied cohorts in LandR format.
 #' @param pixelGroupMap Optional supplied single-layer community map.
 #' @return List containing supplied objects unchanged and synthetic missing inputs.
@@ -37,11 +37,12 @@ hartJohnstoneDemoInputs <- function(cohortData = NULL, pixelGroupMap = NULL) {
       recipe = c(1L, 2L, 2L, 3L, 3L, 4L, 4L, 5L, 6L),
       speciesCode = c("Popu_tre", "Popu_tre", "Pice_mar", "Pice_mar", "Abie_bal",
                       "Pinu_ban", "Pinu_con", "Lari_lar", "Pice_gla"),
-      B = c(100, 50, 50, 50, 50, 40, 60, 100, 100)
+      B = c(100, 50, 50, 50, 50, 80, 20, 100, 100)
     )
     groups <- data.table::data.table(pixelGroup = ids, recipe = (seq_along(ids) - 1L) %% 6L + 1L)
     cohortData <- merge(groups, recipes, by = "recipe", allow.cartesian = TRUE)
     cohortData[, recipe := NULL]
+    cohortData[, speciesCode := factor(speciesCode)]
     data.table::setcolorder(cohortData, c("pixelGroup", "speciesCode", "B"))
   }
   list(cohortData = cohortData, pixelGroupMap = pixelGroupMap)

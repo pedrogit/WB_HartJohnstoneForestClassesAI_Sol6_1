@@ -1,16 +1,20 @@
 #' Classify LandR forest communities using relative cohort biomass
 #'
-#' Adapts Hart et al. (2019), Table 1 and section 2.4, using an inclusive
-#' 66 percent biomass threshold. All Pinus species are pooled; Larix is conifer.
-#' Other conifer-dominated groups (including pure fir) use residual class 3.
+#' Matches the original module's six-class biomass rules, without drainage.
+#' Species groups use case-insensitive literal prefixes, first match winning.
 #' @param cohortData A data.frame/data.table with pixelGroup, speciesCode (LandR
-#'   convention), and nonnegative finite B (all cohorts, in consistent units).
+#'   convention, stored as a factor), and nonnegative finite B.
 #' @param pixelGroupMap Single-layer terra SpatRaster of integer community IDs.
-#'   Zero and missing cells become NA; positive IDs require positive biomass.
+#'   IDs without cohorts become NA; zero is a valid supplied group ID.
+#' @param jackPineSp,larchSp,spruceSp,otherConiferSp Literal species prefixes.
+#' @param classificationTablePath Optional CSV summary destination.
 #' @return A categorical SpatRaster with codes 1:6, six labels and a color table.
-#'   Geometry and inputs are unchanged. No outputs are written to disk.
+#'   Geometry and inputs are unchanged; CSV is written only when requested.
 #' @export
-classifyHartJohnstoneForest <- function(cohortData, pixelGroupMap) {
+classifyHartJohnstoneForest <- function(
+    cohortData, pixelGroupMap, jackPineSp = c("Pinu_ban"),
+    larchSp = c("Lari"), spruceSp = c("Pice"), classificationTablePath = NULL,
+    otherConiferSp = c("Abie", "Calc", "Cham", "Juni", "Pinu", "Pseu", "Sequ", "Taxu", "Thuj", "Tsug")) {
   if (!inherits(pixelGroupMap, "SpatRaster") || terra::nlyr(pixelGroupMap) != 1L) {
     stop("pixelGroupMap must be a single-layer terra SpatRaster.")
   }
@@ -19,13 +23,13 @@ classifyHartJohnstoneForest <- function(cohortData, pixelGroupMap) {
     stop("cohortData must contain pixelGroup, speciesCode and B columns.")
   }
   if (!terra::hasValues(pixelGroupMap)) stop("pixelGroupMap has no cell values.")
-  ids <- terra::unique(pixelGroupMap)[[1L]]
+  ids <- as.numeric(terra::unique(pixelGroupMap)[[1L]])
   ids <- ids[!is.na(ids)]
   if (any(!is.finite(ids) | ids < 0 | ids != trunc(ids))) {
     stop("pixelGroupMap IDs must be nonnegative finite integers or NA.")
   }
-  ids <- ids[ids > 0]
-  dt <- data.table::as.data.table(cohortData)[, required, with = FALSE]
+  dt <- data.table::copy(data.table::as.data.table(cohortData))
+  if (!is.factor(dt$speciesCode)) stop("`speciesCode` must be a factor.")
   if (!is.numeric(dt$pixelGroup) || any(!is.finite(dt$pixelGroup) |
       dt$pixelGroup < 0 | dt$pixelGroup != trunc(dt$pixelGroup))) {
     stop("cohortData pixelGroup IDs must be nonnegative finite integers.")
@@ -33,67 +37,58 @@ classifyHartJohnstoneForest <- function(cohortData, pixelGroupMap) {
   if (!is.numeric(dt$B) || any(!is.finite(dt$B) | dt$B < 0)) {
     stop("cohortData B must be finite, nonnegative numeric biomass.")
   }
-  dt <- dt[pixelGroup %in% ids]
-  missingGroups <- setdiff(ids, dt$pixelGroup)
-  if (length(missingGroups)) {
-    stop("Positive map IDs without cohorts: ", paste(head(missingGroups, 10L), collapse = ", "))
+  prefixMatch <- function(prefixes, parameterName) {
+    if (!is.character(prefixes) || anyNA(prefixes) ||
+        any(!nzchar(trimws(prefixes)) | trimws(prefixes) != prefixes)) {
+      stop("`", parameterName, "` must be a character vector of nonblank prefixes without surrounding whitespace.")
+    }
+    codes <- levels(dt$speciesCode)
+    matching <- rep(FALSE, length(codes))
+    for (prefix in unique(tolower(prefixes))) {
+      matching <- matching | startsWith(tolower(codes), prefix)
+    }
+    dt$speciesCode %in% codes[matching]
   }
-  if (length(ids)) {
-    # Load package data without attaching LandR or its unrelated dependencies.
-    taxonomy <- new.env(parent = baseenv())
-    utils::data("sppEquivalencies_CA", package = "LandR", envir = taxonomy)
-    spp <- as.data.frame(taxonomy$sppEquivalencies_CA)
-    if (!all(c("LandR", "Latin_full", "Type") %in% names(spp))) {
-      stop("LandR species equivalencies lack the required taxonomy columns.")
-    }
-    # Varieties may share a LandR code; only conflicting classification matters.
-    spp$genus <- sub(" .*", "", spp$Latin_full)
-    spp <- unique(spp[, c("LandR", "genus", "Type")])
-    used <- unique(as.character(dt$speciesCode[dt$B > 0]))
-    ambiguous <- spp$LandR[duplicated(spp$LandR)]
-    if (any(used %in% ambiguous)) stop("Ambiguous LandR taxonomy for speciesCode.")
-    index <- match(as.character(dt$speciesCode), spp$LandR)
-    type <- spp$Type[index]
-    unknown <- dt$B > 0 & (is.na(index) | is.na(type) | !type %in% c("Conifer", "Deciduous"))
-    if (any(unknown)) {
-      stop("Unknown positive-biomass speciesCode: ",
-           paste(unique(as.character(dt$speciesCode[unknown])), collapse = ", "))
-    }
-    genus <- spp$genus[index]
-    dt[, `:=`(treeType = type, genus = genus)]
-    totals <- dt[, list(
-      total = sum(as.numeric(B)),
-      deciduous = sum(as.numeric(B[!is.na(treeType) & treeType == "Deciduous"])),
-      conifer = sum(as.numeric(B[!is.na(treeType) & treeType == "Conifer"])),
-      pine = sum(as.numeric(B[!is.na(genus) & genus == "Pinus"])),
-      larch = sum(as.numeric(B[!is.na(genus) & genus == "Larix"])),
-      spruce = sum(as.numeric(B[!is.na(genus) & genus == "Picea"]))
-    ), by = pixelGroup]
-    if (any(!is.finite(totals$total) | totals$total <= 0)) {
-      stop("Every positive map ID requires finite, positive total biomass.")
-    }
-    # A relative tolerance protects exact 66% boundaries, not nearby mixtures.
-    threshold <- 0.66 - 8 * .Machine$double.eps
-    totals[, class := 2L]
-    totals[conifer / total >= threshold, class := 3L]
-    totals[deciduous / total >= threshold, class := 1L]
-    totals[pine / total >= threshold, class := 4L]
-    totals[larch / total >= threshold, class := 5L]
-    totals[spruce / total >= threshold, class := 6L]
-    lookup <- rbind(c(0, NA_real_), as.matrix(totals[, c("pixelGroup", "class"), with = FALSE]))
+  # Validate every parameter even if an earlier group matches all cohorts.
+  jackPine <- prefixMatch(jackPineSp, "jackPineSp")
+  larch <- prefixMatch(larchSp, "larchSp")
+  spruce <- prefixMatch(spruceSp, "spruceSp")
+  otherConifer <- prefixMatch(otherConiferSp, "otherConiferSp")
+  dt[, speciesNb := data.table::fcase(
+    jackPine, 1, larch, 2, spruce, 3, otherConifer, 4, default = 5)]
+  totals <- dt[, list(
+    totB = sum(B), jackPineTotB = sum(B[speciesNb == 1]),
+    larchTotB = sum(B[speciesNb == 2]), spruceTotB = sum(B[speciesNb == 3]),
+    otherConiferTotB = sum(B[speciesNb == 4])), by = pixelGroup]
+  totals[, coniferTotB := jackPineTotB + larchTotB + spruceTotB + otherConiferTotB]
+  # Keep expression order and strict residual boundary identical to the original.
+  totals[, class := data.table::fcase(
+    jackPineTotB / totB >= 2/3, 4L, larchTotB / totB >= 0.75, 5L,
+    spruceTotB / totB >= 2/3, 6L, coniferTotB / totB >= 2/3, 3L,
+    1 - coniferTotB / totB > 2/3, 1L, default = 2L)]
+  labels <- c("deci", "mixed", "conimix", "jackpine", "larch", "spruce")
+  if (!is.null(classificationTablePath)) {
+    dir.create(dirname(classificationTablePath), recursive = TRUE, showWarnings = FALSE)
+    summary <- totals[, list(
+      pixelGroup = pixelGroup, B = totB,
+      jackPinePct = as.integer(jackPineTotB / totB * 100),
+      larchPct = as.integer(larchTotB / totB * 100),
+      sprucePct = as.integer(spruceTotB / totB * 100),
+      otherConiferPct = as.integer(otherConiferTotB / totB * 100),
+      coniferPct = as.integer(coniferTotB / totB * 100),
+      classInt = class, classText = factor(class, levels = 1:6, labels = labels))]
+    utils::write.csv(summary, classificationTablePath, quote = FALSE)
+  }
+  if (nrow(totals)) {
+    lookup <- as.matrix(totals[, c("pixelGroup", "class"), with = FALSE])
     result <- terra::classify(pixelGroupMap, lookup, others = NA)
   } else {
     result <- terra::init(terra::rast(pixelGroupMap), NA_real_)
   }
-  names(result) <- "WB_HartJohnstoneForestClassesAI_Sol6_1_Map"
-  legend <- data.frame(value = 1:6, label = c(
-    "Deciduous", "Conifer-deciduous mix", "Conifer mix",
-    "Pine (jack pine + other pines)", "Larch", "Spruce"
-  ))
-  result <- terra::categories(result, value = legend)
-  palette <- grDevices::col2rgb(c("#E5C849", "#B5BD68", "#668C70", "#B5793A", "#D997C5", "#34675C"))
-  terra::coltab(result) <- data.frame(value = 1:6, red = palette[1L, ],
-                                     green = palette[2L, ], blue = palette[3L, ], alpha = 255L)
-  names(result) <- "WB_HartJohnstoneForestClassesAI_Sol6_1_Map"
+  levels(result) <- data.frame(ID = 1:6, class = labels)
+  terra::coltab(result) <- cbind(ID = 1:6, col = c(
+    "#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854", "#ffd92f"))
+  names(result) <- "standtype"
+  terra::varnames(result) <- "standtype"
   result
 }

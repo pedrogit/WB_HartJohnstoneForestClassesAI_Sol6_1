@@ -2,8 +2,14 @@
 #' @param forestMap Raster returned by classifyHartJohnstoneForest.
 #' @param outputDirectory Existing or creatable simulation output directory.
 #' @param simulationTime Finite scalar simulation time, used in unique filenames.
+#' @param filenamePrefix Safe basename distinguishing this module's exports.
 #' @return Invisibly, the GeoTIFF and QML paths. Existing outputs are never replaced.
-writeHartJohnstoneForestMap <- function(forestMap, outputDirectory, simulationTime) {
+writeHartJohnstoneForestMap <- function(forestMap, outputDirectory, simulationTime,
+                                      filenamePrefix = "WB_HartJohnstoneForestClassesAI_Sol6_1_Map") {
+  if (!is.character(filenamePrefix) || length(filenamePrefix) != 1L ||
+      is.na(filenamePrefix) || !grepl("^[A-Za-z0-9_-]+$", filenamePrefix)) {
+    stop("filenamePrefix must be a nonempty safe basename.")
+  }
   if (!is.numeric(simulationTime) || length(simulationTime) != 1L || !is.finite(simulationTime)) {
     stop("simulationTime must be a finite numeric scalar.")
   }
@@ -11,7 +17,7 @@ writeHartJohnstoneForestMap <- function(forestMap, outputDirectory, simulationTi
     stop("Cannot create output directory: ", outputDirectory)
   }
   stamp <- sprintf("%.17g", simulationTime)
-  base <- file.path(outputDirectory, paste0(names(forestMap), "_time_", stamp))
+  base <- file.path(outputDirectory, paste0(filenamePrefix, "_time_", stamp))
   tif <- paste0(base, ".tif")
   qml <- paste0(base, ".qml")
   if (any(file.exists(c(tif, qml, paste0(tif, ".aux.xml"))))) {

@@ -1,122 +1,133 @@
 # WB_HartJohnstoneForestClassesAI_Sol6_1
 
-Classifies LandR biomass cohorts into six Hart–Johnstone-style forest classes.
-It is an **adaptation** of Hart et al. (2019), Table 1 and section 2.4: biomass
-replaces basal area and stem density. It does not apply age, drainage, minimum
-biomass, basal-area, or stem-density thresholds.
+Version **0.2.0** matches the original module's implemented non-drainage
+six-class rules. This adapts Hart et al. (2019), Table 1 and section 2.4:
+biomass replaces basal area and stem density. Equivalence is not ecological
+validation. No age, drainage or minimum-biomass threshold is applied.
 
-## Interface
-
-The reusable helper is `R/classifyHartJohnstoneForest.R`:
+## Interface and rules
 
 ```r
 source("R/classifyHartJohnstoneForest.R")
 classes <- classifyHartJohnstoneForest(cohortData, pixelGroupMap)
 ```
 
-`cohortData` is a `data.frame` or `data.table` with `pixelGroup`, `speciesCode`,
-and `B`. Biomass is summed over all cohorts and ages within each `pixelGroup`.
-`pixelGroupMap` is a single-layer `terra::SpatRaster` of pixel-group IDs. The
-helper obtains the LandR taxonomy with `utils::data()` without attaching LandR,
-does not require a simulation, and performs no file input/output other than
-loading that package data. It returns a labeled integer `SpatRaster` named
-`WB_HartJohnstoneForestClassesAI_Sol6_1_Map` with the original geometry.
+Supply a data.frame/data.table containing numeric `pixelGroup`, factor
+`speciesCode`, and finite nonnegative numeric `B`, plus a valued single-layer
+terra SpatRaster of nonnegative integer IDs (or missing cells). Inputs are not
+modified. Output geometry is unchanged; its layer/variable name is `standtype`.
+The helper has no simulation or taxonomy-package dependency. Optional
+`classificationTablePath` writes CSV; NULL disables that output.
 
-## Classification
+Species codes use **case-insensitive literal prefix matching**, assigned only
+to the first matching group: jack pine, larch, spruce, additional conifer,
+then residual nonconifer. Missing and unmatched codes enter the residual,
+which need not mean true deciduous trees. Sum biomass across all ages/cohorts;
+the denominator includes all biomass. Apply these rules in priority order,
+without floating-point tolerance adjustments:
 
-The denominator is all recognized tree biomass in a pixel group. The dominance
-threshold is inclusive: $\geq 0.66$.
-
-| Code | Label | Rule |
+| Priority | Code / label | Rule |
 |---:|---|---|
-| 1 | Deciduous | Broadleaf-deciduous biomass $\geq 66\%$ |
-| 2 | Conifer–deciduous mix | Neither broadleaf deciduous nor all conifers reaches $66\%$ |
-| 3 | Conifer mix | All conifers $\geq 66\%$ and pine, larch, and spruce each remain below $66\%$ |
-| 4 | Pine (jack pine + other pines) | Pooled pine biomass $\geq 66\%$ |
-| 5 | Larch | Pooled larch biomass $\geq 66\%$ |
-| 6 | Spruce | Pooled spruce biomass $\geq 66\%$ |
+| 1 | 4 / jackpine | Jack pine / total biomass $\geq 2/3$ |
+| 2 | 5 / larch | Larch / total biomass $\geq 0.75$ |
+| 3 | 6 / spruce | Spruce / total biomass $\geq 2/3$ |
+| 4 | 3 / conimix | All four conifer groups / total biomass $\geq 2/3$ |
+| 5 | 1 / deci | $1 - \mathrm{coniferTotB}/\mathrm{totB} > 2/3$ |
+| 6 | 2 / mixed | Otherwise, including zero-total groups |
 
-Pine includes jack pine, lodgepole pine, and other pines; this broadens the
-requested jack-pine class. Larch is a conifer. Single-group conifer classes
-take precedence over class 3. Class 3 is a residual conifer class: fir and
-other conifers contribute to conifer biomass, but even a fir-dominated stand is
-class 3 rather than spruce.
+Default jack pine is `Pinu_ban`, not all pines. Other pines and fir contribute
+to conifer mix unless a higher-priority rule applies. A 70% larch stand is
+conifer mix. Each species parameter accepts an empty character vector to match
+nothing; entries cannot be missing, blank or whitespace-padded.
 
-Map cells with ID `0`, `NA`, or `NaN` return `NA` (NoData); there is no class
-0. A `NULL` map, malformed IDs, positive map groups without cohorts, zero group
-biomass, missing/non-finite/negative `B`, or an unknown positive-biomass species
-is an error. Empty cohorts are valid only when the map has no positive IDs.
-Extra cohort groups not represented in the map are allowed.
+Zero map IDs with cohorts may receive a class. IDs without cohorts become
+NoData, as do missing raster cells; extra unmapped cohort groups are allowed.
+Sol6 retains stricter structural, ID and finite/nonnegative biomass checks
+than the original, rather than promising malformed-input error parity.
 
-## SpaDES use and exports
+## SpaDES parameters and timing
 
-Load this module after `Biomass_core`. It consumes `cohortData` and
-`pixelGroupMap`, creates `WB_HartJohnstoneForestClassesAI_Sol6_1_Map`, and
-initializes that in-memory map in a same-time event at priority 8.5, after core
-growth and summary (not during the framework's priority-1 init). It then updates after core
-growth, mortality, cohort reclassification, summaries, and dispersal at every
-positive `Biomass_core` `successionTimestep` boundary (event priority 8.5).
-The initial map is also saved at simulation start (time 0 in the main project),
-followed by every positive succession-boundary map.
+Load after `Biomass_core` when coupled. Inputs must be supplied explicitly or
+by another module; production execution never silently constructs synthetic
+inputs. The simulation object remains
+`WB_HartJohnstoneForestClassesAI_Sol6_1_Map`, independently of its `standtype`
+layer name. No drainage parameter or input is declared or consumed.
 
-### Standalone demonstration
+| Parameter | Default |
+|---|---|
+| `.plots` | `"screen"` |
+| `.plotInitialTime` | `NA` |
+| `.plotInterval` | `NA` |
+| `WB_HJForestClassesTimeStep` | `NA_real_` |
+| `.saveInitialTime` | `NA` |
+| `.saveInterval` | `NA` |
+| `.useCache` | `FALSE` |
+| `jackPineSp` | `c("Pinu_ban")` |
+| `larchSp` | `c("Lari")` |
+| `spruceSp` | `c("Pice")` |
+| `otherConiferSp` | `c("Abie", "Calc", "Cham", "Juni", "Pinu", "Pseu", "Sequ", "Taxu", "Thuj", "Tsug")` |
 
-Set this module's `demoMode = TRUE` in `simInit()` parameters and load only
-`WB_HartJohnstoneForestClassesAI_Sol6_1`. No Biomass_core module is needed.
-The default is `FALSE`, so production runs never silently fabricate inputs.
-The demonstration is deterministic and static: it illustrates classification
-and exports, not forest growth or succession dynamics.
+NA classification interval follows core succession, or uses 10 years
+standalone. An explicit interval must be finite, positive and match core when
+coupled. Classification runs at simulation start and `start + n * interval`,
+through simulation end, at priority 8.5, after growth 6 and summary 8.25.
+Plot/save events start only when their initial-time parameters are set, with
+priorities 8.75/9. Their NA intervals follow classification; explicit intervals
+must be finite and positive. As in the original, plot/save reschedule relative
+to their event time, independently of classification.
 
-With neither input supplied, `.inputObjects` creates a six-cell EPSG:3005 map
-and synthetic cohorts representing all six classes. With cohorts alone, it
-creates a map of their positive group IDs. With a map alone, it creates cohorts
-for its positive IDs, cycling the six example compositions. With both supplied,
-it creates neither. `suppliedElsewhere()` guards each input, including inputs
-promised by another module; existing objects are never overwritten. Inconsistent
-supplied inputs still fail validation rather than being repaired or replaced.
+Every classification writes
+`WB_HartJohnstoneForestClassesAI_Sol6_1_<time padded to three digits>.csv`
+to `outputPath(sim)`, using original column/group order, row-name column,
+integer-truncated percentages and six-class values. **TIFF/QML saving is off
+by default**, occurring only on requested save events. A save exports the
+latest map rather than performing an extra classification.
 
-If `Biomass_core$successionTimestep` is absent, demo mode uses the module's
-`demoSuccessionTimestep` (default 1 year). A supplied core timestep takes
-precedence, and an invalid supplied core timestep is an error, not a reason to
-fall back. The fallback is unavailable when demo mode is off. Synthetic-data
-creation and fallback use produce informational messages. Exports follow the
-same TIFF/QML naming and collision safeguards; use a separate output directory
-for demonstrations so they cannot be confused with real simulation results.
-
-Each update writes to `outputPath(sim)` by default. Set the module's
-`exportDirectory` parameter to a nonempty directory to redirect only classifier
-exports while retaining upstream cache/output paths. Existing-file protection
-also applies to that directory. Filenames are:
-
-```text
-WB_HartJohnstoneForestClassesAI_Sol6_1_Map_time_<simulation-time>.tif
-WB_HartJohnstoneForestClassesAI_Sol6_1_Map_time_<simulation-time>.qml
-```
-
-The TIFF and same-basename QML sidecar preserve the six labels, stable palette,
-integer values, geometry, and transparent NoData. Existing output-name
-collisions stop the run rather than overwrite a result. In QGIS, load the TIFF,
-then use **Layer Properties → Symbology → Style → Load Style** to select its
-matching `.qml` if the style is not applied automatically. Actual QGIS GUI
-rendering has not been verified.
-
-## Tests
-
-Set `HART_TEST_OUTPUT_DIR` to a new disposable output directory, then run the
-focused tests from this module directory:
+## Explicit exports and migration
 
 ```r
-source("tests/run-tests.R")
+source("R/writeHartJohnstoneForestMap.R")
+writeHartJohnstoneForestMap(classes, outputDirectory, simulationTime = 0)
 ```
 
-The runner covers helper classification and module/export behavior. It does not
-run a full Biomass simulation.
+The explicit writer and save events retain the six-class TIFF/QML palette.
+Default filenames are
+`WB_HartJohnstoneForestClassesAI_Sol6_1_Map_time_<simulation-time>.tif`
+and the matching `.qml`; optional writer `filenamePrefix` is independent of
+the raster name. Time formatting avoids rounding collisions for these exports.
+Existing CSV, TIFF or QML outputs are never overwritten: collisions stop the
+run. CSV names follow the original three-digit convention and can therefore
+collide at fractional times. Load the matching QML in QGIS via **Layer
+Properties → Symbology → Style → Load Style** if needed; GUI rendering remains
+unverified.
 
-## Reference
+Removed public parameters: `demoMode`, `demoSuccessionTimestep`, and
+`exportDirectory`. Replace these with explicitly constructed inputs,
+`WB_HJForestClassesTimeStep`, and simulation `outputPath`, respectively.
+Set `.saveInitialTime` (and optionally `.saveInterval`) for requested raster
+exports; they no longer happen at every update.
 
-Hart, S. J., Henkelman, J., McLoughlin, P. D., Nielsen, S. E., Truchon-Savard, A.,
-and Johnstone, J. F. (2019). Examining forest resilience to changing fire frequency
-in a fire-prone region of boreal forest. Global Change Biology, 25, 869–884.
-doi:10.1111/gcb.14550. Classification: Table 1 and section 2.4, p. 873.
+```r
+source("R/hartJohnstoneDemoInputs.R")
+exampleInputs <- hartJohnstoneDemoInputs()
+# Pass exampleInputs as objects to simInit(), or call the helper directly:
+exampleMap <- classifyHartJohnstoneForest(exampleInputs$cohortData,
+                                        exampleInputs$pixelGroupMap)
+```
+
+This explicit deterministic helper preserves supplied inputs, constructs only
+missing demonstration inputs, and covers all six classes when neither is
+supplied. It illustrates classification, not forest growth.
+
+## Tests and reference
+
+Set `HART_TEST_OUTPUT_DIR` to a new disposable assistant-scratch directory,
+then run `source("tests/run-tests.R")` from this module. Tests do not run a full
+Biomass simulation. The parity harness accepts an explicit original-module path;
+standard tests do not require that module.
+
+Hart, S. J. et al. (2019). Examining forest resilience to changing fire frequency
+in a fire-prone region of boreal forest. *Global Change Biology*, 25, 869–884.
+doi:10.1111/gcb.14550. Table 1 and section 2.4, p. 873.
 
 Developed with AI assistance (Posit Assistant).
