@@ -26,7 +26,9 @@ defineModule(sim, list(
     defineParameter("spruceSp", "character", c("Pice"), NA, NA, "Literal case-insensitive spruce prefixes."),
     defineParameter("otherConiferSp", "character",
                     c("Abie", "Calc", "Cham", "Juni", "Pinu", "Pseu", "Sequ", "Taxu", "Thuj", "Tsug"),
-                    NA, NA, "Additional conifer prefixes, applied after jack pine, larch and spruce.")
+                    NA, NA, "Additional conifer prefixes, applied after jack pine, larch and spruce."),
+    defineParameter("writeClassificationCsv", "logical", FALSE, NA, NA,
+                    "Whether to write a classification summary CSV in the output path at each classification.")
   ),
   inputObjects = rbind(
     expectsInput("cohortData", "data.table", "LandR cohorts: pixelGroup, speciesCode and B, summed over all ages.", sourceURL = NA_character_),
@@ -34,7 +36,7 @@ defineModule(sim, list(
   ),
   outputObjects = rbind(
     createsOutput("WB_HartJohnstoneForestClassesAI_Sol6_1_Map", "SpatRaster",
-                  "Six categorical biomass-based forest classes; standtype layer, CSV each classification and optional TIFF/QML saves.")
+                  "Six categorical biomass-based forest classes; standtype layer and optional CSV and TIFF/QML outputs.")
   )
 ))
 
@@ -72,9 +74,12 @@ doEvent.WB_HartJohnstoneForestClassesAI_Sol6_1 <- function(sim, eventTime, event
         sim <- scheduleEvent(sim, P(sim)$.saveInitialTime, moduleName, "save", eventPriority = 9)
     },
     reComputeHJForestClassesMap = {
-      csv <- file.path(outputPath(sim), paste0(moduleName, "_", sprintf("%03d", time(sim)), ".csv"))
-      if (file.exists(csv)) stop("Output already exists; refusing to overwrite: ", csv)
-      dir.create(outputPath(sim), recursive = TRUE, showWarnings = FALSE)
+      csv <- NULL
+      if (isTRUE(P(sim)$writeClassificationCsv)) {
+        csv <- file.path(outputPath(sim), paste0(moduleName, "_", sprintf("%03d", time(sim)), ".csv"))
+        if (file.exists(csv)) stop("Output already exists; refusing to overwrite: ", csv)
+        dir.create(outputPath(sim), recursive = TRUE, showWarnings = FALSE)
+      }
       sim[[outputName]] <- classifyHartJohnstoneForest(
         sim$cohortData, sim$pixelGroupMap,
         jackPineSp = P(sim)$jackPineSp, larchSp = P(sim)$larchSp,

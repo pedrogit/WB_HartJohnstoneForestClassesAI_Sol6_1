@@ -17,7 +17,7 @@ test_that("actual SpaDES events synchronize to succession and save post-update m
     sim <- simInit(times=list(start=3,end=7,timeunit="year"),
                    modules=c("Biomass_core","WB_HartJohnstoneForestClassesAI_Sol6_1"),
                    params=list(Biomass_core=list(successionTimestep=interval),
-                     WB_HartJohnstoneForestClassesAI_Sol6_1=list(.saveInitialTime=3)),
+                     WB_HartJohnstoneForestClassesAI_Sol6_1=list(.saveInitialTime=3,writeClassificationCsv=TRUE)),
                    objects=list(cohortData=data.table(pixelGroup=1L,speciesCode=factor("Pice_mar"),B=100),
                                 pixelGroupMap=rast(nrows=1,ncols=1,vals=1)),
                    paths=list(modulePath=file.path(root,"modules"),inputPath=file.path(root,"inputs"),
@@ -68,7 +68,7 @@ test_that("first classification follows time-zero growth and summary without wea
   first <- rast(file.path(root,"outputs","WB_HartJohnstoneForestClassesAI_Sol6_1_Map_time_0.tif"))
   expect_equal(as.vector(values(first)), c(6,NA_real_))
   expect_length(list.files(file.path(root,"outputs"), pattern="\\.tif$"), 2)
-  expect_length(list.files(file.path(root,"outputs"), pattern="\\.csv$"), 2)
+  expect_length(list.files(file.path(root,"outputs"), pattern="\\.csv$"), 0)
 })
 
 test_that("standalone classification defaults to ten years and TIFF saving is optional", {
@@ -84,7 +84,7 @@ test_that("standalone classification defaults to ten years and TIFF saving is op
   p <- params(sim)$WB_HartJohnstoneForestClassesAI_Sol6_1
   expected <- list(.plots="screen", .plotInitialTime=NA, .plotInterval=NA,
     WB_HJForestClassesTimeStep=NA_real_, .saveInitialTime=NA, .saveInterval=NA,
-    .useCache=FALSE, jackPineSp="Pinu_ban", larchSp="Lari", spruceSp="Pice",
+    .useCache=FALSE, writeClassificationCsv=FALSE, jackPineSp="Pinu_ban", larchSp="Lari", spruceSp="Pice",
     otherConiferSp=c("Abie","Calc","Cham","Juni","Pinu","Pseu","Sequ","Taxu","Thuj","Tsug"))
   for (name in names(expected)) expect_equal(p[[name]],expected[[name]])
   expect_false(any(c("demoMode","demoSuccessionTimestep","exportDirectory") %in% names(p)))
@@ -95,7 +95,7 @@ test_that("standalone classification defaults to ten years and TIFF saving is op
   expect_equal(events$eventTime,c(3,13,23))
   expect_true(all(events$eventPriority == 8.5))
   expect_equal(names(sim$WB_HartJohnstoneForestClassesAI_Sol6_1_Map),"standtype")
-  expect_length(list.files(file.path(root,"outputs"),pattern="\\.csv$"),3)
+  expect_length(list.files(file.path(root,"outputs"),pattern="\\.csv$"),0)
   expect_length(list.files(file.path(root,"outputs"),pattern="\\.(tif|qml)$"),0)
 })
 
@@ -108,7 +108,7 @@ test_that("species overrides are forwarded and save timing is independent of cla
   sim <- simInit(times=list(start=3,end=7,timeunit="year"),
     modules="WB_HartJohnstoneForestClassesAI_Sol6_1",
     params=list(WB_HartJohnstoneForestClassesAI_Sol6_1=list(
-      WB_HJForestClassesTimeStep=2,jackPineSp="Jack",larchSp="Lar",
+      WB_HJForestClassesTimeStep=2,writeClassificationCsv=TRUE,jackPineSp="Jack",larchSp="Lar",
       spruceSp="Spr",otherConiferSp="Other",.saveInitialTime=4,.saveInterval=3)),
     objects=list(cohortData=d,pixelGroupMap=rast(nrows=1,ncols=4,vals=1:4)),
     paths=list(modulePath=dirname(module),inputPath=file.path(root,"inputs"),

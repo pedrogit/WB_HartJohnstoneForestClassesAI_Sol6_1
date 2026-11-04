@@ -66,6 +66,7 @@ layer name. No drainage parameter or input is declared or consumed.
 | `larchSp` | `c("Lari")` |
 | `spruceSp` | `c("Pice")` |
 | `otherConiferSp` | `c("Abie", "Calc", "Cham", "Juni", "Pinu", "Pseu", "Sequ", "Taxu", "Thuj", "Tsug")` |
+| `writeClassificationCsv` | `FALSE` |
 
 NA classification interval follows core succession, or uses 10 years
 standalone. An explicit interval must be finite, positive and match core when
@@ -76,10 +77,11 @@ priorities 8.75/9. Their NA intervals follow classification; explicit intervals
 must be finite and positive. As in the original, plot/save reschedule relative
 to their event time, independently of classification.
 
-Every classification writes
+When `writeClassificationCsv = TRUE`, every classification writes
 `WB_HartJohnstoneForestClassesAI_Sol6_1_<time padded to three digits>.csv`
 to `outputPath(sim)`, using original column/group order, row-name column,
-integer-truncated percentages and six-class values. **TIFF/QML saving is off
+integer-truncated percentages and six-class values. CSV writing is disabled
+by default and does not affect the classified raster. **TIFF/QML saving is off
 by default**, occurring only on requested save events. A save exports the
 latest map rather than performing an extra classification.
 
