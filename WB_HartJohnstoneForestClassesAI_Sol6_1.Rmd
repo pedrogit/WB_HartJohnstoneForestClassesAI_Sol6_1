@@ -1,0 +1,128 @@
+---
+title: "WB_HartJohnstoneForestClassesAI_Sol6_1 Manual"
+date: "Last updated: `r Sys.Date()`"
+output:
+  bookdown::html_document2:
+    toc: true
+    number_sections: false
+    keep_md: true
+editor_options:
+  chunk_output_type: console
+---
+
+## Overview
+
+`WB_HartJohnstoneForestClassesAI_Sol6_1` converts LandR cohort biomass into a
+six-class forest map. It adapts Hart et al. (2019), Table 1 and section 2.4
+(p. 873), by using biomass in place of basal area and stem density. It is not a
+literal implementation of that paper and does not use age, drainage, basal-area,
+stem-density, or minimum-biomass forest thresholds.
+
+## Inputs and output
+
+The module requires `cohortData` with `pixelGroup`, `speciesCode`, and `B`, and
+a single-layer `terra::SpatRaster` `pixelGroupMap`. It creates the labeled
+integer raster `WB_HartJohnstoneForestClassesAI_Sol6_1_Map`; its geometry matches
+`pixelGroupMap`.
+
+The classifier can also be used without SpaDES:
+
+```{r external-helper, eval=FALSE}
+source("R/classifyHartJohnstoneForest.R")
+forestClasses <- classifyHartJohnstoneForest(cohortData, pixelGroupMap)
+```
+
+It accepts a `data.frame` or `data.table`, resolves LandR taxonomy through
+`utils::data()` without attaching LandR, and has no simulation dependency. The
+helper neither writes files nor changes its inputs.
+
+## Legend and adaptation rules
+
+Biomass is summed across all cohorts and ages in a pixel group. All proportions
+use recognized tree biomass in that group as the denominator, and $0.66$ is an
+inclusive threshold.
+
+| Value | Label | Assignment |
+|---:|---|---|
+| 1 | Deciduous | Broadleaf-deciduous biomass is at least 66% |
+| 2 | Conifer–deciduous mix | Neither broadleaf deciduous nor all conifers is at least 66% |
+| 3 | Conifer mix | All conifers are at least 66%; pine, larch, and spruce are each below 66% |
+| 4 | Pine (jack pine + other pines) | Pooled pine biomass is at least 66% |
+| 5 | Larch | Pooled larch biomass is at least 66% |
+| 6 | Spruce | Pooled spruce biomass is at least 66% |
+
+Pine is pooled at genus level, including jack and lodgepole pine; consequently,
+class 4 is broader than a jack-pine-only class. Larch is coniferous. Single
+pine/larch/spruce dominance is assigned before conifer mix. Class 3 is a
+residual conifer class, so fir and other recognized conifers contribute to it
+but are not relabeled spruce. This is a limitation of the western extension.
+
+Cells whose map value is `0`, `NA`, or `NaN` are `NA` (NoData), not class 0.
+The classifier stops for a missing raster, malformed IDs, positive map groups
+without cohort records, zero group biomass, missing/non-finite/negative biomass,
+or unknown species with positive biomass. An empty cohort table is allowed only
+for a map containing no positive IDs. Cohort groups absent from the map are
+ignored.
+
+## Timing and files
+
+Load after `Biomass_core`. The module initializes the in-memory output at the
+simulation start, then classifies after the core succession work at every
+positive `successionTimestep` boundary, using priority 8.5. It reads the
+`Biomass_core` timestep rather than maintaining a separate classification
+interval. The initial state is exported at simulation start (time 0 in the main
+project), as well as at every positive succession boundary.
+
+For each such update, the configured `outputPath` receives:
+
+```text
+WB_HartJohnstoneForestClassesAI_Sol6_1_Map_time_<simulation-time>.tif
+WB_HartJohnstoneForestClassesAI_Sol6_1_Map_time_<simulation-time>.qml
+```
+
+Times are formatted to avoid rounding-name collisions. A collision or write
+failure stops rather than replacing an earlier result. TIFFs retain integer
+codes, labels, geometry, NoData, and the fixed palette. The matching QML uses a
+paletted unique-values renderer with all six labels and colors, including absent
+classes. If QGIS does not automatically apply it, load the same-basename QML
+from **Layer Properties → Symbology → Style → Load Style**. Actual QGIS GUI
+rendering remains unverified.
+
+## Standalone demonstration mode
+
+The module parameter `demoMode` defaults to `FALSE`. When explicitly enabled,
+`.inputObjects` supplies deterministic synthetic data only for inputs not
+reported by `suppliedElsewhere()`. With neither input supplied, a six-cell
+EPSG:3005 map and cohorts illustrate all classes. Cohort-only runs receive a map
+of their positive IDs; map-only runs receive example cohorts cycling six
+compositions across positive IDs. Both supplied inputs are retained unchanged,
+and incompatible inputs remain validation errors. The demonstration is static,
+not a model of forest growth.
+
+The core succession timestep takes precedence whenever present. Only in demo
+mode, if that parameter is absent, `demoSuccessionTimestep` supplies the interval
+(default 1 year). Invalid supplied core intervals are not masked. Informational
+messages identify synthetic input creation and fallback use. Load only this
+module for standalone demonstration and use a separate output directory;
+positive timestep boundaries still write the same TIFF/QML output pairs.
+
+## Testing
+
+Set `HART_TEST_OUTPUT_DIR` to a new disposable directory, then run:
+
+```{r run-tests, eval=FALSE}
+source("tests/run-tests.R")
+```
+
+The focused tests cover all class rules and boundaries, validation, geometry,
+non-mutation, succession synchronization, and TIFF/QML exports without a full
+Biomass simulation.
+
+## Reference
+
+Hart, S. J., Henkelman, J., McLoughlin, P. D., Nielsen, S. E., Truchon-Savard, A.,
+and Johnstone, J. F. (2019). Examining forest resilience to changing fire frequency
+in a fire-prone region of boreal forest. Global Change Biology, 25, 869–884.
+doi:10.1111/gcb.14550. Classification: Table 1 and section 2.4, p. 873.
+
+Developed with AI assistance (Posit Assistant).
