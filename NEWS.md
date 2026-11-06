@@ -2,6 +2,15 @@
 
 ## Development version
 
+### Unreleased (after 0.2.0)
+
+* The deciduous rule is now `1 - conifer share >= 2/3` instead of `> 2/3`, so it is inclusive
+  like every other dominance rule and like Appendix S3 of Greuel et al. (2021) (">= 66% broadleaf
+  deciduous species"). A pixel group whose non-conifer share is exactly 2/3 is now deci instead of
+  mixed. The year 0, 50 and 100 snapshots have no such group, so their maps are unchanged. The
+  original and `WB_HartJohnstoneForestClassesAI_S5_5` changed the same way.
+* README rules table now lists the Appendix S3 rule next to each rule and the differences that remain.
+
 ### 0.1.3
 
 * Defer initial classification to a same-time event at priority 8.5, after core

@@ -60,14 +60,15 @@ test_that("two-thirds and 75 percent boundaries use original expressions", {
     expect_equal(as.vector(values(classifyHartJohnstoneForest(d, map))),
                  case$expected, info = case$species)
   }
-  # Construct the exact strict residual boundary via the original subtraction.
+  # Construct the exact deciduous boundary via the original subtraction. The boundary is
+  # inclusive (Appendix S3: >= 66% broadleaf), so the middle case is deci, not mixed.
   conifer <- (1 - 2/3) + c(epsilon, 0, -epsilon)
   d <- data.table(
     pixelGroup = rep(1:3, each = 2),
     speciesCode = factor(rep(c("Abie_bal", "Popu_tre"), 3)),
     B = as.vector(rbind(conifer, 1 - conifer))
   )
-  expect_equal(as.vector(values(classifyHartJohnstoneForest(d, map))), c(2, 2, 1))
+  expect_equal(as.vector(values(classifyHartJohnstoneForest(d, map))), c(2, 1, 1))
 })
 
 test_that("custom prefixes are case-insensitive anchored literal strings", {

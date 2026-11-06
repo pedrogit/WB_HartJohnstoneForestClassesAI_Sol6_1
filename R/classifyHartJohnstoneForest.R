@@ -61,11 +61,13 @@ classifyHartJohnstoneForest <- function(
     larchTotB = sum(B[speciesNb == 2]), spruceTotB = sum(B[speciesNb == 3]),
     otherConiferTotB = sum(B[speciesNb == 4])), by = pixelGroup]
   totals[, coniferTotB := jackPineTotB + larchTotB + spruceTotB + otherConiferTotB]
-  # Keep expression order and strict residual boundary identical to the original.
+  # Expression order and boundaries are identical to the original module. Every dominance
+  # rule is inclusive (>=), including deciduous (the non-conifer share), as in Appendix S3 of
+  # Greuel et al. (2021, after Hart et al. 2019). Before 2026-11-06 deciduous used a strict ">".
   totals[, class := data.table::fcase(
     jackPineTotB / totB >= 2/3, 4L, larchTotB / totB >= 0.75, 5L,
     spruceTotB / totB >= 2/3, 6L, coniferTotB / totB >= 2/3, 3L,
-    1 - coniferTotB / totB > 2/3, 1L, default = 2L)]
+    1 - coniferTotB / totB >= 2/3, 1L, default = 2L)]
   labels <- c("deci", "mixed", "conimix", "jackpine", "larch", "spruce")
   if (!is.null(classificationTablePath)) {
     dir.create(dirname(classificationTablePath), recursive = TRUE, showWarnings = FALSE)
