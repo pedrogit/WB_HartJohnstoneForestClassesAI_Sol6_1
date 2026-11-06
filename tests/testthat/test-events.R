@@ -82,8 +82,9 @@ test_that("standalone classification defaults to ten years and TIFF saving is op
     paths=list(modulePath=dirname(module),inputPath=file.path(root,"inputs"),
       outputPath=file.path(root,"outputs"),cachePath=file.path(root,"cache")))
   p <- params(sim)$WB_HartJohnstoneForestClassesAI_Sol6_1
-  expected <- list(.plots="screen", .plotInitialTime=NA, .plotInterval=NA,
-    WB_HJForestClassesTimeStep=NA_real_, .saveInitialTime=NA, .saveInterval=NA,
+  # Numeric parameters that mean "unset" default to a typed NA (NA_real_), not a logical NA.
+  expected <- list(.plots="screen", .plotInitialTime=NA_real_, .plotInterval=NA_real_,
+    WB_HJForestClassesTimeStep=NA_real_, .saveInitialTime=NA_real_, .saveInterval=NA_real_,
     .useCache=FALSE, writeClassificationCsv=FALSE, jackPineSp="Pinu_ban", larchSp="Lari", spruceSp="Pice",
     otherConiferSp=c("Abie","Calc","Cham","Juni","Pinu","Pseu","Sequ","Taxu","Thuj","Tsug"))
   for (name in names(expected)) expect_equal(p[[name]],expected[[name]])
